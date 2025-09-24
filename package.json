@@ -1,0 +1,11 @@
+{
+  "name": "supabase-firebase-notifier",
+  "version": "1.0.0",
+  "main": "server.js",
+  "type": "module",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.0.0",
+    "firebase-admin": "^11.10.0",
+    "dotenv": "^16.0.0"
+  }
+}
