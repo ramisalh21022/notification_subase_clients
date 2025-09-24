@@ -1,132 +1,96 @@
 // server.js
-const express = require("express");
-const { createClient } = require("@supabase/supabase-js");
-const admin = require("firebase-admin");
-const fs = require("fs");
-const path = require("path");
+import express from "express";
+import { createClient } from "@supabase/supabase-js";
+import admin from "firebase-admin";
+import fs from "fs";
 
-// --- إعداد Express ---
-const app = express();
-app.use(express.json());
-
-// --- قراءة متغيرات البيئة ---
+// ==== إعداد البيئة ====
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const FCM_JSON_PATH = process.env.FCM_SERVICE_ACCOUNT_JSON_PATH;
+const FCM_SERVICE_ACCOUNT_JSON_PATH = process.env.FCM_SERVICE_ACCOUNT_JSON_PATH;
 
-// --- إعداد Supabase ---
+if (!SUPABASE_URL || !SUPABASE_KEY || !FCM_SERVICE_ACCOUNT_JSON_PATH) {
+  throw new Error("Please set SUPABASE_URL, SUPABASE_KEY, FCM_SERVICE_ACCOUNT_JSON_PATH");
+}
+
+// ==== تهيئة Supabase ====
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// --- إعداد Firebase Admin ---
-const serviceAccount = JSON.parse(fs.readFileSync(path.resolve(FCM_JSON_PATH), "utf8"));
+// ==== تهيئة Firebase Admin ====
+const serviceAccount = JSON.parse(fs.readFileSync(FCM_SERVICE_ACCOUNT_JSON_PATH, "utf-8"));
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 
-// --- دالة لإرسال إشعار FCM ---
-async function sendFCMNotification(token, title, body, data = {}) {
-  if (!token) return;
-  const message = {
-    token,
-    notification: { title, body },
-    data,
-  };
+// ==== إنشاء سيرفر Express ====
+const app = express();
+app.use(express.json());
+
+// ==== دالة لإرسال إشعارات لكل عملاء فعالين ====
+async function sendNotification(title, body, data = {}) {
   try {
-    const response = await admin.messaging().send(message);
-    console.log("✅ Notification sent:", response);
+    const { data: clients, error } = await supabase
+      .from("clients")
+      .select("fcm_token")
+      .in("subscription_status", ["active", "trial"])
+      .not("fcm_token", "is", null);
+
+    if (error) return console.error("Error fetching clients:", error);
+    if (!clients || clients.length === 0) return;
+
+    for (const client of clients) {
+      if (!client.fcm_token) continue;
+
+      await admin.messaging().send({
+        notification: { title, body },
+        token: client.fcm_token,
+        data,
+      });
+    }
   } catch (err) {
-    console.error("❌ Error sending notification:", err);
+    console.error("Error sending notification:", err);
   }
 }
 
-// --- مراقبة التغييرات في جدول products_comp ---
-async function listenProductsComp() {
-  const channel = supabase.channel("products_comp_channel")
-    .on("postgres_changes", { event: "*", schema: "public", table: "products_comp" }, async (payload) => {
-      console.log("🔔 products_comp event:", payload.eventType, payload.new || payload.old);
+// ==== الاشتراك في Realtime لجدول products_comp ====
+const productChannel = supabase.channel("realtime-products")
+  .on("postgres_changes", { event: "*", schema: "public", table: "products_comp" }, async (payload) => {
+    console.log("🔔 Event products_comp received:", payload);
 
-      // جلب كل العملاء الفعّالين
-      const { data: clients, error } = await supabase
-        .from("clients")
-        .select("fcm_token")
-        .in("subscription_status", ["active", "trial"])
-        .not("fcm_token", "is", null);
+    const action = payload.eventType; // INSERT, UPDATE, DELETE
+    const product_name = payload.new?.product_name ?? payload.old?.product_name ?? "منتج";
 
-      if (error) return console.error(error);
+    await sendNotification(
+      action === "INSERT" ? "تم إضافة منتج" : action === "UPDATE" ? "تم تحديث منتج" : "تم حذف منتج",
+      `${product_name} تم ${action.toLowerCase()}`,
+      { type: "product_update", action, product_name }
+    );
+  })
+  .subscribe();
 
-      // إعداد الرسالة
-      let title = "تحديث المنتجات";
-      let body = "";
-      switch (payload.eventType) {
-        case "INSERT":
-          body = `تمت إضافة منتج: ${payload.new.product_name}`;
-          break;
-        case "UPDATE":
-          body = `تم تعديل المنتج: ${payload.new.product_name}`;
-          break;
-        case "DELETE":
-          body = `تم حذف المنتج: ${payload.old.product_name}`;
-          break;
-      }
+// ==== الاشتراك في Realtime لجدول companies ====
+const companyChannel = supabase.channel("realtime-companies")
+  .on("postgres_changes", { event: "*", schema: "public", table: "companies" }, async (payload) => {
+    console.log("🔔 Event companies received:", payload);
 
-      // إرسال الإشعارات لكل عميل
-      for (const client of clients) {
-        await sendFCMNotification(client.fcm_token, title, body, {
-          type: "products_comp",
-          action: payload.eventType,
-        });
-      }
-    })
-    .subscribe();
+    const action = payload.eventType;
+    const company_name = payload.new?.company_name ?? payload.old?.company_name ?? "شركة";
 
-  console.log("👂 Listening for changes on products_comp...");
-}
+    await sendNotification(
+      action === "INSERT" ? "تم إضافة شركة" : action === "UPDATE" ? "تم تحديث شركة" : "تم حذف شركة",
+      `${company_name} تم ${action.toLowerCase()}`,
+      { type: "company_update", action, company_name }
+    );
+  })
+  .subscribe();
 
-// --- مراقبة التغييرات في جدول companies ---
-async function listenCompanies() {
-  const channel = supabase.channel("companies_channel")
-    .on("postgres_changes", { event: "*", schema: "public", table: "companies" }, async (payload) => {
-      console.log("🔔 companies event:", payload.eventType, payload.new || payload.old);
+// ==== Endpoint بسيط للتأكد أن السيرفر يعمل ====
+app.get("/", (_req, res) => {
+  res.send("Server is running and listening for changes on products_comp and companies.");
+});
 
-      const { data: clients, error } = await supabase
-        .from("clients")
-        .select("fcm_token")
-        .in("subscription_status", ["active", "trial"])
-        .not("fcm_token", "is", null);
-
-      if (error) return console.error(error);
-
-      let title = "تحديث الشركات";
-      let body = "";
-      switch (payload.eventType) {
-        case "INSERT":
-          body = `تمت إضافة شركة: ${payload.new.company_name}`;
-          break;
-        case "UPDATE":
-          body = `تم تعديل الشركة: ${payload.new.company_name}`;
-          break;
-        case "DELETE":
-          body = `تم حذف الشركة: ${payload.old.company_name}`;
-          break;
-      }
-
-      for (const client of clients) {
-        await sendFCMNotification(client.fcm_token, title, body, {
-          type: "companies",
-          action: payload.eventType,
-        });
-      }
-    })
-    .subscribe();
-
-  console.log("👂 Listening for changes on companies...");
-}
-
-// --- تشغيل السيرفر ---
+// ==== تشغيل السيرفر ====
 const PORT = process.env.PORT || 3000;
-app.get("/", (req, res) => res.send("Server is running"));
-app.listen(PORT, async () => {
+app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  await listenProductsComp();
-  await listenCompanies();
 });
