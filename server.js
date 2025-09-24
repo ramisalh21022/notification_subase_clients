@@ -7,7 +7,7 @@ import fs from "fs";
 // ==== إعداد البيئة ====
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const FCM_SERVICE_ACCOUNT_JSON_PATH = process.env.FCM_SERVICE_ACCOUNT_JSON_PATH;
+
 const FCM_SERVICE_ACCOUNT_JSON_PATH = "/etc/secrets/serviceAccount.json";
 
 
@@ -98,4 +98,5 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
+
 
