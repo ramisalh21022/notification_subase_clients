@@ -8,6 +8,9 @@ import fs from "fs";
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const FCM_SERVICE_ACCOUNT_JSON_PATH = process.env.FCM_SERVICE_ACCOUNT_JSON_PATH;
+const FCM_SERVICE_ACCOUNT_JSON_PATH = "/etc/secrets/serviceAccount.json";
+
+
 
 if (!SUPABASE_URL || !SUPABASE_KEY || !FCM_SERVICE_ACCOUNT_JSON_PATH) {
   throw new Error("Please set SUPABASE_URL, SUPABASE_KEY, FCM_SERVICE_ACCOUNT_JSON_PATH");
@@ -17,7 +20,8 @@ if (!SUPABASE_URL || !SUPABASE_KEY || !FCM_SERVICE_ACCOUNT_JSON_PATH) {
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ==== تهيئة Firebase Admin ====
-const serviceAccount = JSON.parse(fs.readFileSync(FCM_SERVICE_ACCOUNT_JSON_PATH, "utf-8"));
+const serviceAccount = JSON.parse(fs.readFileSync(FCM_SERVICE_ACCOUNT_JSON_PATH, "utf8"));
+
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
@@ -94,3 +98,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
+
