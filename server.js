@@ -76,8 +76,7 @@ try {
   }
 }
 
-  } catch (err) {
-    console.error("Error sending notification:", err);
+  } 
   }
 }
 
@@ -123,6 +122,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
+
 
 
 
