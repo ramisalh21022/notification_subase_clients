@@ -39,17 +39,33 @@ async function sendNotification(title, body, data = {}) {
       .in("subscription_status", ["active", "trial"])
       .not("fcm_token", "is", null);
 
-    if (error) return console.error("Error fetching clients:", error);
-    if (!clients || clients.length === 0) return;
+    if (error) {
+      console.error("Error fetching clients:", error);
+      return;
+    }
 
+    if (!clients || clients.length === 0) {
+      console.log("No clients found with FCM tokens.");
+      return;
+    }
+
+    // طباعة جميع التوكنات للتأكد
+    console.log("Tokens to send notifications to:", clients.map(c => c.fcm_token));
+
+    // إرسال الإشعارات لكل عميل
     for (const client of clients) {
       if (!client.fcm_token) continue;
 
-      await admin.messaging().send({
-        notification: { title, body },
-        token: client.fcm_token,
-        data,
-      });
+      try {
+        const response = await admin.messaging().send({
+          notification: { title, body },
+          token: client.fcm_token,
+          data,
+        });
+        console.log("Successfully sent message:", response);
+      } catch (err) {
+        console.error("Error sending message to token:", client.fcm_token, err);
+      }
     }
   } catch (err) {
     console.error("Error sending notification:", err);
@@ -98,5 +114,6 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
+
 
 
