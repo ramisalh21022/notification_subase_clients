@@ -56,17 +56,26 @@ async function sendNotification(title, body, data = {}) {
     for (const client of clients) {
       if (!client.fcm_token) continue;
 
-      try {
-        const response = await admin.messaging().send({
-          notification: { title, body },
-          token: client.fcm_token,
-          data,
-        });
-        console.log("Successfully sent message:", response);
-      } catch (err) {
-        console.error("Error sending message to token:", client.fcm_token, err);
-      }
-    }
+try {
+  const response = await admin.messaging().send({
+    notification: { title, body },
+    token: client.fcm_token,
+    data,
+  });
+  console.log("Successfully sent message:", response);
+} catch (err) {
+  if (err.code === 'messaging/registration-token-not-registered') {
+    console.log(`Token no longer valid, removing from database: ${client.fcm_token}`);
+    // حذف التوكن من قاعدة البيانات
+    await supabase
+      .from('clients')
+      .update({ fcm_token: null })
+      .eq('fcm_token', client.fcm_token);
+  } else {
+    console.error("Error sending message to token:", client.fcm_token, err);
+  }
+}
+
   } catch (err) {
     console.error("Error sending notification:", err);
   }
@@ -114,6 +123,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
+
 
 
 
